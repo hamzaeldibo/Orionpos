@@ -904,8 +904,8 @@ select option{background:var(--card)}
 .posw{display:grid;grid-template-columns:1fr 375px;gap:16px;height:calc(100vh - var(--hh) - 40px)}
 .pgpanel{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden}
 .pghdr{padding:13px;border-bottom:1px solid var(--bdr);display:flex;gap:8px;flex-wrap:wrap}
-.pgg{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;padding:13px;overflow-y:auto;flex:1}
-.pcard{background:var(--card2);border:1px solid var(--bdr2);border-radius:10px;padding:12px 10px;cursor:pointer;transition:all .2s;text-align:center}
+.pgg{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,140px));gap:8px;padding:13px;overflow-y:auto;flex:1;justify-content:start}
+.pcard{background:var(--card2);border:1px solid var(--bdr2);border-radius:10px;padding:12px 10px;cursor:pointer;transition:all .2s;text-align:center;width:100%;max-width:140px}
 .pcard:hover{border-color:var(--blue);transform:translateY(-2px);box-shadow:0 6px 17px rgba(0,0,0,.3)}
 .pcard.oos{opacity:.4;cursor:not-allowed}
 .pcid{font-size:9px;color:var(--muted);margin-bottom:3px}
@@ -914,8 +914,12 @@ select option{background:var(--card)}
 .pcstock{font-size:9px;color:var(--muted);margin-top:1px}
 .pbill{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden}
 .pbhdr{padding:12px 13px;border-bottom:1px solid var(--bdr);background:var(--card2)}
-.bitems{flex:1;overflow-y:auto;padding:10px}
-.bitem{display:grid;grid-template-columns:1fr auto auto auto;gap:4px;align-items:center;padding:8px;border-radius:8px;background:var(--card2);border:1px solid var(--bdr2);margin-bottom:6px}
+.bitems{flex:1;overflow-y:auto;padding:6px 10px}
+.bitem{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:7px 10px;border-radius:0;background:transparent;border:none;border-bottom:1px solid var(--bdr);margin-bottom:0}
+.bitem:first-child{border-top:1px solid var(--bdr2);border-radius:8px 8px 0 0;background:var(--card2)}
+.bitem:last-child{border-radius:0 0 8px 8px;background:var(--card2)}
+.bitem:only-child{border-radius:8px;border:1px solid var(--bdr2)}
+.bitem:nth-child(even){background:var(--hover)}
 .biname{font-size:11.5px;font-weight:600}
 .biup{font-size:10px;color:var(--muted)}
 .qrow{display:flex;align-items:center;gap:3px}
@@ -1262,7 +1266,7 @@ function loginScreenRestore(){
 <!-- ═══ SETUP SCREEN (First Launch) ═══ -->
 <div class="screen" id="setupScreen">
   <div class="glass">
-    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.100 — §FIX: INITIAL stock movement · rebuild preserves legacy stock</span></div>
+    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.101 — §UI: POS compact cards · unified cart table</span></div>
     <div class="sdots"><div class="sdot act" id="d1"></div><div class="sdot" id="d2"></div></div>
 
     <!-- Step 1: Owner Google Login (sp0 removed — info merged into login card) -->
@@ -4335,7 +4339,7 @@ function nowLocalFull(){
 // Schema version: bumped when DB structure changes.
 // ════════════════════════════════════════════════════════════════════
 const SCHEMA_VERSION = 3; // v3: integer cents storage, timestamp seq, two-phase migration
-const APP_VERSION    = '1.1.100'; // §v1.1.100: INITIAL movement on product create; rebuildStock preserves legacy stock | §v1.1.99: CACHE fixes; PIN fix
+const APP_VERSION    = '1.1.101'; // §v1.1.101: POS UI — compact product cards; unified cart table header | §v1.1.100: INITIAL movement; rebuild preserves legacy
 // ═══════════════════════════════════════════════════════════════════════
 // §ROOT-CAUSE-FIX v10.8 — NOTES/RETURNS UI NOT UPDATING (FINAL FIX)
 // ───────────────────────────────────────────────────────────────────────
@@ -8274,10 +8278,12 @@ const POS = {
     if(!container) return;
     if(!CART.length){ container.innerHTML='<div class="empty"><i class="fa-solid fa-cart-plus"></i><p>اضغط على منتج لإضافته</p></div>'; const bt=document.getElementById('billTotals'); if(bt) bt.style.display='none'; return; }
     const s=getCurr();
+    // §v1.1.101-UI: unified table header for clean single-table appearance
+    const header=`<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;padding:5px 10px 4px;font-size:10px;color:var(--muted);font-weight:700;border-bottom:2px solid var(--bdr2);margin-bottom:3px"><span>المنتج</span><span style="text-align:center">الكمية</span><span style="text-align:center;min-width:55px">الإجمالي</span><span style="width:21px"></span></div>`;
     // §POS-QTY: id-based addressing (stable across re-renders); onchange fires on blur/Enter
     // only (not oninput) so user can clear the field and type a new number without mid-type resets.
     // §v1.1.93-FIX1: Use _mulCents/_toCents for line total display — matches confirmSale() cents engine exactly.
-    container.innerHTML=CART.map((it,i)=>{ const _ltc=_mulCents(_toCents(it.price),Math.max(1,parseInt(it.qty)||1)); return `<div class="bitem"><div><div class="biname">${escapeHtml(it.name)}</div><div class="biup">${it.price} ${s}/${it.unit}</div></div><div class="qrow"><button class="qb" onclick="POS.decQty('${it.id}')">−</button><input class="qin" type="number" value="${it.qty}" min="1" onchange="POS.updateQty('${it.id}',this.value)" style="width:54px;text-align:center"><button class="qb" onclick="POS.incQty('${it.id}')">+</button></div><div style="font-size:12px;font-weight:700;min-width:55px;text-align:center">${_fromCents(_ltc).toFixed(2)}</div><button class="qb" onclick="POS.removeItem(${i})" style="color:var(--red)"><i class="fa-solid fa-trash-can" style="font-size:10px"></i></button></div>`; }).join('');
+    container.innerHTML=header+CART.map((it,i)=>{ const _ltc=_mulCents(_toCents(it.price),Math.max(1,parseInt(it.qty)||1)); return `<div class="bitem"><div><div class="biname">${escapeHtml(it.name)}</div><div class="biup">${it.price} ${s}/${it.unit}</div></div><div class="qrow"><button class="qb" onclick="POS.decQty('${it.id}')">−</button><input class="qin" type="number" value="${it.qty}" min="1" onchange="POS.updateQty('${it.id}',this.value)" style="width:54px;text-align:center"><button class="qb" onclick="POS.incQty('${it.id}')">+</button></div><div style="font-size:12px;font-weight:700;min-width:55px;text-align:center">${_fromCents(_ltc).toFixed(2)}</div><button class="qb" onclick="POS.removeItem(${i})" style="color:var(--red)"><i class="fa-solid fa-trash-can" style="font-size:10px"></i></button></div>`; }).join('');
     this.recalc();
   },
   // §POS-QTY: id-based qty methods — stable against re-render race conditions
