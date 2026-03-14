@@ -1266,7 +1266,7 @@ function loginScreenRestore(){
 <!-- ═══ SETUP SCREEN (First Launch) ═══ -->
 <div class="screen" id="setupScreen">
   <div class="glass">
-    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.102 — §UI: POS single-column · compact product cards</span></div>
+    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.104 — §FIX: Clean OPS export · Clean invoices CSV</span></div>
     <div class="sdots"><div class="sdot act" id="d1"></div><div class="sdot" id="d2"></div></div>
 
     <!-- Step 1: Owner Google Login (sp0 removed — info merged into login card) -->
@@ -1746,7 +1746,7 @@ function loginScreenRestore(){
 <div class="page" id="page-reports">
   <div class="ph"><div><h1>التقارير 📈</h1><p>تحليل معمق — مُعاد حسابه من الأحداث</p></div>
     <div style="display:flex;gap:7px">
-      <button class="btn bgh bsm" onclick="exportCSV(DB.all('INVOICES'),'الفواتير')"><i class="fa-brands fa-file-excel" style="color:#1D6F42"></i>Excel</button>
+      <button class="btn bgh bsm" onclick="RPTS.exportInvoicesCSV()"><i class="fa-brands fa-file-excel" style="color:#1D6F42"></i>Excel</button>
       <button class="btn bgh bsm" onclick="exportRptPDF()"><i class="fa-solid fa-file-pdf" style="color:#e53e3e"></i>PDF</button>
     </div>
   </div>
@@ -4122,9 +4122,56 @@ const BACKUP = (function(){
     exportOpsLog(pin){
       if(!_verifyPin(pin)){ TOAST.err('PIN غير صحيح'); return false; }
       const rows = EVENTS.all();
-      _download('ops_log_'+_stamp()+'.csv', _toCSV(rows), 'text/csv;charset=utf-8');
-      const s = AUTH.getSession();
-      EVENTS.log('BACKUP_OPS', { count: rows.length }, s?.id);
+      // §v1.1.104-FIX-JRNL: Clean formatted export instead of raw internal dump
+      const s = (()=>{ try{ const c=DB.findOne('SETTINGS',{key:'config'}); return c?JSON.parse(c.value).currency||'$':'$'; }catch(_){return '$';} })();
+      const users = DB.all('USERS');
+      const _typeAr = {
+        'SALE':'بيع','RETURN':'مرتجع','EXPENSE':'مصروف','DEBT_PAYMENT':'تسديد دين',
+        'DEBT_CREATED':'دين جديد','DEBT_DISCOUNT':'خصم دين','FIRST_INSTALLMENT':'دفعة أولى',
+        'PURCHASE_INVOICE':'فاتورة شراء','SUPPLIER_PAYMENT':'دفعة مورد',
+        'PURCHASE_RETURN':'مرتجع مورد','INVENTORY_ADJ':'تسوية مخزون',
+        'INVOICE_VOID':'إلغاء فاتورة','RETURN_DELETED':'حذف مرتجع',
+        'EXPENSE_DELETED':'حذف مصروف','RETURN_DEBT_ADJ':'تخفيض دين',
+        'CREATE_PRODUCT':'إضافة منتج','UPDATE_PRODUCT':'تعديل منتج',
+        'DELETE_PRODUCT':'حذف منتج','LOGIN':'دخول','LOGOUT':'خروج',
+        'BACKUP':'نسخة احتياطية','RESTORE':'استعادة','STOCK_REBUILT':'إعادة بناء مخزون',
+      };
+      const _amt = (p) => {
+        const v = parseFloat(p.total||p.grand||p.amt||p.amount||p.discount||0);
+        return v !== 0 ? v.toFixed(2)+' '+s : '';
+      };
+      const headers = ['التاريخ','الوقت','النوع','الوصف','المبلغ','المستخدم'];
+      const dataRows = rows.map(e => {
+        let p={}; try{ p=JSON.parse(e.payload||'{}'); }catch(_){}
+        const ts = e.timestamp||'';
+        const date = ts.slice(0,10);
+        const time = ts.slice(11,19)||'';
+        const typeAr = _typeAr[e.type]||e.type;
+        const user = users.find(u=>u.id===e.user_id);
+        const userName = user?.name || e.user_id || 'نظام';
+        let desc = '';
+        switch(e.type){
+          case 'SALE': desc=`فاتورة #${p.num||'—'} — ${p.customer||'عميل عام'}`; break;
+          case 'RETURN': desc=`مرتجع من فاتورة #${p.inv||'—'} — ${p.customer||'—'}`; break;
+          case 'EXPENSE': desc=`${p.cat||'—'}: ${p.desc||'—'}`; break;
+          case 'EXPENSE_DELETED': desc=`حذف: ${p.cat||'—'}: ${p.desc||'—'}`; break;
+          case 'DEBT_PAYMENT': desc=`دفعة من ${p.customer||'—'} — فاتورة #${p.invoiceNum||'—'}`; break;
+          case 'DEBT_CREATED': desc=`دين على ${p.customer||p.custName||'—'}`; break;
+          case 'PURCHASE_INVOICE': desc=`مورد: ${p.supplierId||'—'} — فاتورة #${p.invoiceNumber||'—'}`; break;
+          case 'SUPPLIER_PAYMENT': desc=`دفعة للمورد — ${p.method||'—'}`; break;
+          case 'INVENTORY_ADJ': desc=`${p.product||'—'}: ${p.from||0} → ${p.to||0} (${p.reason||'—'})`; break;
+          case 'INVOICE_VOID': desc=`إلغاء فاتورة #${p.num||'—'}`; break;
+          case 'CREATE_PRODUCT': desc=`${p.name||'—'} (${p.code||'—'})`; break;
+          case 'UPDATE_PRODUCT': desc=`${p.name||'—'}`; break;
+          case 'LOGIN': case 'LOGOUT': desc=`${p.email||p.name||'—'}`; break;
+          default: desc = Object.entries(p).filter(([k])=>!['hash','prevHash','currentHash','sha256'].includes(k)).slice(0,2).map(([k,v])=>`${k}:${v}`).join(' | ');
+        }
+        return [date, time, typeAr, desc, _amt(p), userName];
+      });
+      const escape = v => '"'+String(v||'').replace(/"/g,'""')+'"';
+      const csv = '\ufeff' + [headers, ...dataRows].map(r=>r.map(escape).join(',')).join('\n');
+      _download('يومية_الأحداث_'+_stamp()+'.csv', csv, 'text/csv;charset=utf-8');
+      EVENTS.log('BACKUP_OPS', { count: rows.length }, AUTH.getSession()?.id);
       TOAST.ok('✓ تم تصدير سجل الأحداث ('+rows.length+' حدث)');
       return true;
     },
@@ -4339,7 +4386,7 @@ function nowLocalFull(){
 // Schema version: bumped when DB structure changes.
 // ════════════════════════════════════════════════════════════════════
 const SCHEMA_VERSION = 3; // v3: integer cents storage, timestamp seq, two-phase migration
-const APP_VERSION    = '1.1.102'; // §v1.1.102: POS single-column layout; compact product cards | §v1.1.101: POS UI tweaks | §v1.1.100: INITIAL stock movement
+const APP_VERSION    = '1.1.104'; // §v1.1.104: Clean OPS CSV export; clean invoices CSV in Reports | §v1.1.103: product form reset
 // ═══════════════════════════════════════════════════════════════════════
 // §ROOT-CAUSE-FIX v10.8 — NOTES/RETURNS UI NOT UPDATING (FINAL FIX)
 // ───────────────────────────────────────────────────────────────────────
@@ -9907,7 +9954,19 @@ const PRODS = {
     UI.setVal('eProdId',id||'');
     document.getElementById('prodMTitle').textContent=id?'تعديل منتج':'إضافة منتج جديد';
     if(id){ const p=DB.all('PRODUCTS').find(x=>x.id===id); if(p){['Code','Name','NameEn','Cat','Unit','Status','Desc','PriceR','PriceW','PriceO','Cost','Tax','Min','Max'].forEach(f=>{UI.setVal('p'+f,p[f.charAt(0).toLowerCase()+f.slice(1)]||'');});UI.setVal('pInitStock',p.stock||0);} }
-    else{ UI.setVal('pCode','P'+String(DB.count('PRODUCTS')+1).padStart(3,'0')); UI.setVal('pInitStock',0); }
+    else{
+      // §v1.1.103-FIX1: Reset ALL fields for new product — prevents previous data from remaining
+      ['pName','pNameEn','pDesc'].forEach(id=>UI.setVal(id,''));
+      ['pPriceR','pPriceW','pPriceO','pCost'].forEach(id=>UI.setVal(id,''));
+      UI.setVal('pTax','15'); UI.setVal('pMin','10'); UI.setVal('pMax','500');
+      UI.setVal('pStatus','نشط');
+      UI.setVal('pInitStock','0');
+      // Hide custom category/unit fields
+      const ncw=document.getElementById('ncw'); if(ncw) ncw.style.display='none';
+      const cuw=document.getElementById('cuw'); if(cuw) cuw.style.display='none';
+      // Auto-generate next product code
+      UI.setVal('pCode','P'+String(DB.count('PRODUCTS')+1).padStart(3,'0'));
+    }
     UI.showModal('prodModal');
   },
   save(){
@@ -13787,6 +13846,31 @@ const STRESS_TEST = {
 };
 // ── REPORTS ──
 const RPTS = {
+  // §v1.1.104-FIX-RPTS: Clean formatted invoice CSV export (replaces raw DB.all('INVOICES') dump)
+  exportInvoicesCSV(){
+    const s = getCurr();
+    const invs = DB.all('INVOICES')
+      .filter(i => i.type==='بيع' && i.status!=='ملغاة')
+      .sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    if(!invs.length){ TOAST.err('لا توجد فواتير للتصدير'); return; }
+    const headers = ['رقم الفاتورة','التاريخ','العميل','كود العميل','الإجمالي ('+s+')','المدفوع ('+s+')','المتبقي ('+s+')','طريقة الدفع','الكاشير','الحالة','ملاحظات'];
+    const rows = invs.map(inv => {
+      const { paid: livePaid, remain: liveRemain } = CALC.invoiceActualRemain(inv);
+      const status = liveRemain <= 0.001 ? 'مكتملة' : livePaid > 0.001 ? 'مدفوعة جزئياً' : 'معلقة';
+      const payTypeAr = inv.payType==='cash'?'نقدي':inv.payType==='transfer'?'تحويل':inv.payType==='partial'?'جزئي':'آجل';
+      return [
+        inv.num||'—', inv.date||'—', inv.customer||'عميل عام', inv.custCode||'—',
+        parseFloat(inv.total||0).toFixed(2), livePaid.toFixed(2), liveRemain.toFixed(2),
+        payTypeAr, inv.cashier||'—', status, inv.notes||''
+      ];
+    });
+    const escape = v => '"'+String(v||'').replace(/"/g,'""')+'"';
+    const csv = '\ufeff' + [headers, ...rows].map(r=>r.map(escape).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download = 'تقرير_الفواتير_'+todayISO()+'.csv'; a.click();
+    TOAST.ok('✓ تم تصدير '+invs.length+' فاتورة');
+  },
   renderAll(){
     CALC.syncAllDebts();
     CALC.syncAllInvoices();
