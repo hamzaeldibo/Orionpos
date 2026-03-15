@@ -1266,7 +1266,7 @@ function loginScreenRestore(){
 <!-- ═══ SETUP SCREEN (First Launch) ═══ -->
 <div class="screen" id="setupScreen">
   <div class="glass">
-    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.104 — §FIX: Clean OPS export · Clean invoices CSV</span></div>
+    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.105 — §FIX: PDF multi-page print — modal height fix</span></div>
     <div class="sdots"><div class="sdot act" id="d1"></div><div class="sdot" id="d2"></div></div>
 
     <!-- Step 1: Owner Google Login (sp0 removed — info merged into login card) -->
@@ -4386,7 +4386,7 @@ function nowLocalFull(){
 // Schema version: bumped when DB structure changes.
 // ════════════════════════════════════════════════════════════════════
 const SCHEMA_VERSION = 3; // v3: integer cents storage, timestamp seq, two-phase migration
-const APP_VERSION    = '1.1.104'; // §v1.1.104: Clean OPS CSV export; clean invoices CSV in Reports | §v1.1.103: product form reset
+const APP_VERSION    = '1.1.105'; // §v1.1.105: PDF print fix — modal max-height:none prevents content cutoff | §v1.1.104: clean CSV exports
 // ═══════════════════════════════════════════════════════════════════════
 // §ROOT-CAUSE-FIX v10.8 — NOTES/RETURNS UI NOT UPDATING (FINAL FIX)
 // ───────────────────────────────────────────────────────────────────────
@@ -8715,6 +8715,7 @@ function _printPdfModal(){
     margin: 0 !important;
     padding: 0 !important;
     max-height: none !important;
+    height: auto !important;
     overflow: visible !important;
   }
   #pdfModal .mh,
@@ -8723,6 +8724,13 @@ function _printPdfModal(){
     padding: 0 !important;
     overflow: visible !important;
     max-height: none !important;
+    height: auto !important;
+  }
+  /* §v1.1.105-FIX-PRINT: pdfbox must also expand fully */
+  #pdfModal .pdfbox {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
   }
   /* Table pagination */
   table  { page-break-inside: auto; }
