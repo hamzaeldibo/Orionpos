@@ -1266,7 +1266,7 @@ function loginScreenRestore(){
 <!-- ═══ SETUP SCREEN (First Launch) ═══ -->
 <div class="screen" id="setupScreen">
   <div class="glass">
-    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.106 — §FIX: PDF multi-page root fix (position:static)</span></div>
+    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.108 — §FIX: POS+Customers PDF applyPdfStyles · PurchaseInv @page</span></div>
     <div class="sdots"><div class="sdot act" id="d1"></div><div class="sdot" id="d2"></div></div>
 
     <!-- Step 1: Owner Google Login (sp0 removed — info merged into login card) -->
@@ -4386,7 +4386,7 @@ function nowLocalFull(){
 // Schema version: bumped when DB structure changes.
 // ════════════════════════════════════════════════════════════════════
 const SCHEMA_VERSION = 3; // v3: integer cents storage, timestamp seq, two-phase migration
-const APP_VERSION    = '1.1.106'; // §v1.1.106: PDF ROOT FIX — position:static prevents page repetition | §v1.1.105: modal height fix
+const APP_VERSION    = '1.1.108'; // §v1.1.108: applyPdfStyles added to POS.openPDF+CUST exports; PurchaseInv @page fix | §v1.1.107: Return PDF multipage
 // ═══════════════════════════════════════════════════════════════════════
 // §ROOT-CAUSE-FIX v10.8 — NOTES/RETURNS UI NOT UPDATING (FINAL FIX)
 // ───────────────────────────────────────────────────────────────────────
@@ -8659,6 +8659,8 @@ const POS = {
     const disc=parseFloat(UI.val('tDisc'))||0;
     const tax=parseFloat(document.getElementById('tTax')?.textContent)||0;
         document.getElementById('pdfContent').innerHTML=`<div class="pdfbox"><div class="pdfhdr"><div><div class="pdfco">🏪 ${escapeHtml(cfg.storeName||'')}</div><div style="font-size:11px;color:#6b7280">${escapeHtml(cfg.address||'')}</div></div><div style="text-align:left"><div style="font-size:14px;font-weight:800;color:#1a2440">فاتورة</div><div style="font-size:11px;color:#6b7280">${document.getElementById('billNum')?.textContent||''}</div><div style="font-size:11px;color:#6b7280">${todayISO()}</div></div></div><div class="pdfmeta"><div><strong>العميل:</strong> ${escapeHtml(UI.val('billCust')||'عميل عام')}${(()=>{const _cc=UI.val('billCustCode')||(DB.all('CUSTOMERS').find(cx=>cx.name===(UI.val('billCust')||''))?.code)||'';return _cc?` <span style="font-size:10px;color:#6b7280;font-family:monospace">(رمز: ${_cc})</span>`:''})()}</div>${_getCashierLineHtml('meta')}</div><table class="pdftbl"><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table><div class="pdftots">${disc>0?`<div class="ptr"><span>خصم</span><span>${disc.toFixed(2)} ${s}</span></div>`:''}<div class="ptr grand"><span>الإجمالي</span><span>${grand.toFixed(2)} ${s}</span></div>${(()=>{try{const _cust=UI.val('billCust');const _cr=_cust&&_cust!=='عميل عام'?0:0;const _chk=document.getElementById('applyCreditChk');const _applied=(_chk&&_chk.checked&&_cr>0)?Math.min(_cr,grand):0;return (_applied>0?`<div class="ptr" style="color:#2563eb"><span>💳 رصيد مسبق مطبَّق</span><span>−${_applied.toFixed(2)} ${s}</span></div>`:'')+(_cr>0?`<div class="ptr" style="color:#6b7280;font-size:10px"><span>رصيد مسبق متبقٍ</span><span>${Math.max(0,_cr-_applied).toFixed(2)} ${s}</span></div>`:'');}catch(_){return '';}})()}</div><div class="pdffot">${cfg.footer||'شكراً لتسوقكم معنا!'}</div></div>`;
+    // §v1.1.108-FIX1: apply PDF page styles for correct multipage printing
+    applyPdfStyles();
     UI.showModal('pdfModal');
   }
 };
@@ -9802,14 +9804,26 @@ const RETS = {
     const logoHtml=cfg.pdfLogoData?`<img src="${cfg.pdfLogoData}" style="height:44px;object-fit:contain"><br>`:'';
     const previewHtml=`<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8">
     <title>معاينة المرتجع</title>
-    <style>body{font-family:Arial,sans-serif;direction:rtl;padding:20px;max-width:500px;margin:0 auto}
-    h2{color:#dc2626;border-bottom:2px solid #dc2626;padding-bottom:8px}
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Cairo',Arial,sans-serif;direction:rtl;padding:20px;max-width:680px;margin:0 auto;color:#1a2440}
+    h2{color:#dc2626;border-bottom:2px solid #dc2626;padding-bottom:8px;margin-bottom:16px}
     .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9}
     .row strong{color:#1a2440}.total{font-size:16px;font-weight:800;color:#dc2626}
     table{width:100%;border-collapse:collapse;margin:12px 0}
-    th,td{padding:8px;text-align:right;border:1px solid #e2e8f0}th{background:#f8fafc}
+    th,td{padding:8px;text-align:right;border:1px solid #e2e8f0}th{background:#f8fafc;font-weight:700}
     .badge{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;background:#fef2f2;color:#dc2626}
-    @media print{button{display:none}}</style></head><body>
+    @page{size:A4 portrait;margin:14mm}
+    @media print{
+      button{display:none!important}
+      table{page-break-inside:auto}
+      tr{page-break-inside:avoid;break-inside:avoid}
+      thead{display:table-header-group}
+      tfoot{display:table-footer-group}
+      body{max-width:100%;padding:0}
+    }
+    </style></head><body>
     <div style="text-align:center;margin-bottom:16px">${logoHtml}<h2><i>🔄</i> معاينة المرتجع</h2>
     <div style="font-size:12px;color:#6b7280">التاريخ: ${new Date().toLocaleDateString('ar-SA')} — الوقت: ${new Date().toLocaleTimeString('ar-SA')}</div></div>
     <div class="row"><span>رقم الفاتورة الأصلية</span><strong>${inv.num||'—'}</strong></div>
@@ -9837,13 +9851,25 @@ const RETS = {
     const logoHtml=cfg.pdfLogoData?`<img src="${cfg.pdfLogoData}" style="height:44px;object-fit:contain"><br>`:'';
     const html=`<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8">
     <title>مرتجع ${ret.inv||''}</title>
-    <style>body{font-family:Arial,sans-serif;direction:rtl;padding:24px;max-width:520px;margin:0 auto}
-    h2{color:#dc2626;border-bottom:2px solid #dc2626;padding-bottom:8px}
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Cairo',Arial,sans-serif;direction:rtl;padding:24px;max-width:680px;margin:0 auto;color:#1a2440}
+    h2{color:#dc2626;border-bottom:2px solid #dc2626;padding-bottom:8px;margin-bottom:16px}
     .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9}
     table{width:100%;border-collapse:collapse;margin:12px 0}
-    th,td{padding:8px;text-align:right;border:1px solid #e2e8f0}th{background:#f8fafc}
+    th,td{padding:8px;text-align:right;border:1px solid #e2e8f0}th{background:#f8fafc;font-weight:700}
     .total{font-size:16px;font-weight:800;color:#dc2626}
-    @media print{button{display:none}}</style></head><body>
+    @page{size:A4 portrait;margin:14mm}
+    @media print{
+      button{display:none!important}
+      table{page-break-inside:auto}
+      tr{page-break-inside:avoid;break-inside:avoid}
+      thead{display:table-header-group}
+      tfoot{display:table-footer-group}
+      body{max-width:100%;padding:0}
+    }
+    </style></head><body>
     <div style="text-align:center;margin-bottom:16px">${logoHtml}<h2>🔄 سند مرتجع</h2>
     <div style="font-size:12px;color:#6b7280">التاريخ: ${ret.date||'—'} | الوقت: ${ret.timestamp?new Date(ret.timestamp).toLocaleTimeString('ar-SA'):'—'}</div></div>
     <div class="row"><span>فاتورة أصلية</span><strong>${ret.inv||'—'}</strong></div>
@@ -15817,9 +15843,14 @@ function generatePurchaseInvoicePDF(invoiceId) {
     /* Footer */
     .footer{text-align:center;color:#9ca3af;font-size:10px;margin-top:18px;padding-top:10px;border-top:1px solid #e5e7eb}
     @media print{
-      body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .page{padding:10px}
-      .no-print{display:none}
+      @page{size:A4 portrait;margin:12mm}
+      body{-webkit-print-color-adjust:exact;print-color-adjust:exact;max-width:100%!important}
+      .page{padding:10px;max-width:100%!important}
+      .no-print{display:none!important}
+      table{page-break-inside:auto}
+      tr{page-break-inside:avoid;break-inside:avoid}
+      thead{display:table-header-group}
+      tfoot{display:table-footer-group}
     }
   </style>
 </head>
@@ -18640,6 +18671,8 @@ const CUST_PAGE = {
     }).join('');
     const html=`<div class="pdfbox"><div class="pdfhdr"><div><div class="pdfco">🏪 ${cfg.storeName}</div><div style="font-size:11px">سجل الزبائن — ${todayISO()}</div></div></div><table class="pdftbl"><thead><tr><th>الكود</th><th>الاسم</th><th>الفواتير</th><th>المشتريات</th><th>الديون</th><th>رصيد دائن</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     document.getElementById('pdfContent').innerHTML=html;
+    // §v1.1.108-FIX2: apply PDF page styles for correct multipage printing
+    applyPdfStyles();
     UI.showModal('pdfModal');
   },
 
@@ -18672,6 +18705,8 @@ const CUST_PAGE = {
       <div class="pdffot">${cfg.footer||'شكراً لتعاملكم معنا'}</div>
     </div>`;
     document.getElementById('pdfContent').innerHTML=html;
+    // §v1.1.108-FIX3: apply PDF page styles for correct multipage printing
+    applyPdfStyles();
     UI.showModal('pdfModal');
   }
 };
