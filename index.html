@@ -1266,7 +1266,7 @@ function loginScreenRestore(){
 <!-- ═══ SETUP SCREEN (First Launch) ═══ -->
 <div class="screen" id="setupScreen">
   <div class="glass">
-    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.108 — §FIX: POS+Customers PDF applyPdfStyles · PurchaseInv @page</span></div>
+    <div class="logo-c"><span class="em">🏪</span><h1>SmartStorePOS Gold</h1><p class="sub">نظام إدارة المتاجر الذكي</p><span class="vbadge">v1.1.109 — §FIX: PDF standalone window — no more repeated pages</span></div>
     <div class="sdots"><div class="sdot act" id="d1"></div><div class="sdot" id="d2"></div></div>
 
     <!-- Step 1: Owner Google Login (sp0 removed — info merged into login card) -->
@@ -4386,7 +4386,7 @@ function nowLocalFull(){
 // Schema version: bumped when DB structure changes.
 // ════════════════════════════════════════════════════════════════════
 const SCHEMA_VERSION = 3; // v3: integer cents storage, timestamp seq, two-phase migration
-const APP_VERSION    = '1.1.108'; // §v1.1.108: applyPdfStyles added to POS.openPDF+CUST exports; PurchaseInv @page fix | §v1.1.107: Return PDF multipage
+const APP_VERSION    = '1.1.109'; // §v1.1.109: _printPdfModal → standalone window (fixes Android repeat pages) | §v1.1.108: applyPdfStyles fixes
 // ═══════════════════════════════════════════════════════════════════════
 // §ROOT-CAUSE-FIX v10.8 — NOTES/RETURNS UI NOT UPDATING (FINAL FIX)
 // ───────────────────────────────────────────────────────────────────────
@@ -8683,96 +8683,90 @@ function renderPOS(){ POS.render(); }
 // (POS invoice, INVS.view, DEBTS, suppliers detail, etc.)
 // ─────────────────────────────────────────────────────────────────────────
 function _printPdfModal(){
-  const STYLE_ID = '_pdfModalPrintStyle';
-  // Remove any stale style from a previous interrupted print
-  const stale = document.getElementById(STYLE_ID);
-  if(stale) stale.remove();
+  // §v1.1.109-FIX: Extract pdfContent HTML and open in a clean standalone window.
+  // Previous approach (modifying @media print on the main page) fails on Android/mobile
+  // because the browser reprints the entire page viewport on every page.
+  // Solution: same approach as _openPrintWindow — dedicated window with ONLY the content.
+  const contentEl = document.getElementById('pdfContent');
+  if(!contentEl){ TOAST.err('لا يوجد محتوى للطباعة'); return; }
 
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
-@media print {
-  @page { size: A4 portrait; margin: 12mm; }
+  const cfg = getCfg();
+  const size   = cfg.pdfPageSize || 'A4';
+  const margin = cfg.pdfMargin   || 'normal';
+  const marginMap = { narrow:'8mm', normal:'12mm', wide:'20mm' };
+  const sizeMap   = { A4:'A4 portrait', A5:'A5 portrait', receipt:'80mm auto' };
 
-  /* §v1.1.106-FIX: Use position:static — position:fixed repeats content on every page */
-  html, body {
-    height: auto !important;
-    overflow: visible !important;
-    background: #fff !important;
+  const printHtml = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>طباعة</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{
+    font-family:'Cairo',Arial,sans-serif;
+    direction:rtl;
+    background:#fff;
+    color:#111;
+    padding:10px;
   }
-
-  /* Hide all page UI */
-  body > *:not(#pdfModal) { display: none !important; }
-  #sidebar, #topbar, #toasts,
-  .sbbackdrop, #floatHelpBtn,
-  #bgAuditAlert, #sysAlertBar { display: none !important; }
-
-  /* Show modal as normal block flow (NOT fixed) */
-  #pdfModal {
-    display: block !important;
-    position: static !important;
-    width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    background: #fff !important;
-    box-shadow: none !important;
-    border: none !important;
+  /* Replicate pdfbox styles */
+  .pdfbox{ background:white; color:#111; font-family:'Cairo',sans-serif; }
+  .pdfhdr{ border-bottom:2px solid #1a2440; padding-bottom:13px; margin-bottom:13px;
+            display:flex; justify-content:space-between; align-items:flex-start; }
+  .pdfco{ font-size:18px; font-weight:900; color:#1a2440; }
+  .pdfmeta{ display:grid; grid-template-columns:1fr 1fr; gap:5px;
+             margin-bottom:13px; font-size:11.5px; color:#374151; }
+  .pdfmeta strong{ color:#1a2440; }
+  .pdftbl{ width:100%; border-collapse:collapse; font-size:11px; margin-bottom:13px; }
+  .pdftbl th{ background:#f1f5f9; padding:7px 10px; text-align:right;
+               font-weight:700; border:1px solid #e5e7eb; }
+  .pdftbl td{ padding:7px 10px; border:1px solid #e5e7eb; }
+  .pdftots{ margin-right:auto; max-width:300px; }
+  .ptr{ display:flex; justify-content:space-between; padding:5px 0;
+         font-size:12px; border-bottom:1px solid #e5e7eb; }
+  .ptr.grand{ font-size:15px; font-weight:800; color:#1a2440;
+               border-top:2px solid #1a2440; border-bottom:none; padding-top:10px; }
+  .pdffot{ border-top:1px solid #e5e7eb; padding-top:10px; margin-top:10px;
+            text-align:center; font-size:10.5px; color:#6b7280; }
+  .badge{ display:inline-block; padding:2px 7px; border-radius:4px; font-size:10px; }
+  .bem{ background:#d1fae5; color:#065f46; }
+  .bro{ background:#fee2e2; color:#991b1b; }
+  .bmu{ background:#ede9fe; color:#5b21b6; }
+  .bbl{ background:#dbeafe; color:#1e40af; }
+  .green{ color:#16a34a; } .red{ color:#dc2626; }
+  /* No-print controls */
+  .no-print{ display:none; }
+  @page{ size:${sizeMap[size]||'A4 portrait'}; margin:${marginMap[margin]||'12mm'}; }
+  @media print{
+    body{ padding:0; }
+    table{ page-break-inside:auto; }
+    tr{ page-break-inside:avoid; break-inside:avoid; }
+    thead{ display:table-header-group; }
+    tfoot{ display:table-footer-group; }
   }
-  #pdfModal .modal {
-    display: block !important;
-    position: static !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    max-width: 100% !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    max-height: none !important;
-    height: auto !important;
-    overflow: visible !important;
-    background: #fff !important;
-  }
-  /* Hide header/footer buttons of modal */
-  #pdfModal .mh,
-  #pdfModal .mf { display: none !important; }
-  /* Modal body — full height, no clipping */
-  #pdfModal .mb {
-    display: block !important;
-    padding: 0 !important;
-    overflow: visible !important;
-    max-height: none !important;
-    height: auto !important;
-  }
-  /* PDF content box */
-  #pdfModal .pdfbox {
-    display: block !important;
-    max-height: none !important;
-    height: auto !important;
-    overflow: visible !important;
-    background: #fff !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-  }
+</style>
+</head>
+<body>
+${contentEl.innerHTML}
+<div class="no-print" style="margin-top:16px;text-align:center;display:block">
+  <button onclick="window.print()" style="padding:9px 24px;background:#3b82f6;color:#fff;
+    border:none;border-radius:7px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;
+    margin-left:8px">🖨️ طباعة / حفظ PDF</button>
+  <button onclick="window.close()" style="padding:9px 18px;background:#6b7280;color:#fff;
+    border:none;border-radius:7px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer">
+    إغلاق</button>
+</div>
+</body>
+</html>`;
 
-  /* Table multi-page rules */
-  table  { page-break-inside: auto !important; }
-  tr     { page-break-inside: avoid !important; break-inside: avoid !important; }
-  thead  { display: table-header-group !important; }
-  tfoot  { display: table-footer-group !important; }
-}`;
-  document.head.appendChild(style);
-
-  // Cleanup: prefer onafterprint, fallback to setTimeout
-  const cleanup = () => {
-    const s = document.getElementById(STYLE_ID);
-    if(s) s.remove();
-  };
-  window.onafterprint = cleanup;
-  setTimeout(cleanup, 5000); // safety fallback
-
-  window.print();
+  const win = window.open('', '_blank', 'width=820,height=960,scrollbars=yes,resizable=yes');
+  if(!win){ TOAST.err('يرجى السماح بالنوافذ المنبثقة لتصدير PDF'); return; }
+  win.document.open();
+  win.document.write(printHtml);
+  win.document.close();
+  win.addEventListener('load', () => { setTimeout(() => win.print(), 700); });
 }
 
 // ── PDF STYLES — Dynamic page size/margin per print ──
